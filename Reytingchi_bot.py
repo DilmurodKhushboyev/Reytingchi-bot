@@ -386,4 +386,4 @@ print("Bot ishga tushmoqda...")
 setup_commands()
 print("Bot ishga tushdi!")
 bot.infinity_polling()
-        
+    
