@@ -292,7 +292,7 @@ def cmd_reset(message):
 # ========== + belgisi ==========
 @bot.message_handler(func=lambda m: True, content_types=["text"])
 def handle_plus(message):
-    if message.text.strip() != "+":
+    if message.text.strip() not in ["+", "✅"]:
         return
     if message.chat.type == "private":
         return
