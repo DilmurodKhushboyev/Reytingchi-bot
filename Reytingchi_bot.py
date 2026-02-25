@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Tablo Boti - Guruh ball va reyting tizimi
-pyTelegramBotAPI versiyasi - Buyruqlar menyusi bilan
+Ikki xabarga ajratilgan, ko'k link va bir xil o'rinli versiya
 """
 
 import telebot
@@ -18,7 +18,6 @@ bot = telebot.TeleBot(BOT_TOKEN)
 
 # ========== Buyruqlar menyusini o'rnatish ==========
 def setup_commands():
-    # Guruh buyruqlari
     group_commands = [
         BotCommand("on", "Tabloni boshlash"),
         BotCommand("off", "Tabloni o'chirish"),
@@ -29,7 +28,6 @@ def setup_commands():
         BotCommand("stats", "Statistika"),
         BotCommand("reset", "Reytingni tozalash (admin)"),
     ]
-    # Shaxsiy chat buyruqlari
     private_commands = [
         BotCommand("start", "Botni ishga tushirish"),
         BotCommand("settings", "Sozlamalar"),
@@ -72,16 +70,39 @@ def is_admin(chat_id, user_id):
     except:
         return False
 
+# ----- REYTING VA LINKLAR UCHUN YANGILANGAN FUNKSIYA -----
 def get_rating_text(chat_data):
     users = chat_data["users"]
     if not users:
         return "Hali ball yo'q."
+    
+    # Ballarni ko'pligiga qarab tartiblaymiz
     sorted_users = sorted(users.items(), key=lambda x: x[1]["balls"], reverse=True)
-    medals = ["🥇", "🥈", "🥉"]
+    
     lines = []
-    for i, (uid, info) in enumerate(sorted_users):
-        medal = medals[i] if i < 3 else str(i+1) + "."
-        lines.append(medal + " " + info["name"] + " — " + str(info["balls"]) + " ball")
+    current_rank = 0
+    last_score = -1
+    
+    for uid, info in sorted_users:
+        score = info["balls"]
+        # Bir xil ball to'plaganlarni bitta o'ringa qo'yish mantiqi
+        if score != last_score:
+            current_rank += 1
+            last_score = score
+            
+        if current_rank == 1:
+            medal = "🥇"
+        elif current_rank == 2:
+            medal = "🥈"
+        elif current_rank == 3:
+            medal = "🥉"
+        else:
+            medal = str(current_rank) + "."
+            
+        # Ismlarni ko'k rangli linkka aylantirish
+        name_link = '<a href="tg://user?id=' + str(uid) + '">' + info["name"] + '</a>'
+        lines.append(medal + " " + name_link + " — " + str(score) + " ball")
+        
     return "\n".join(lines)
 
 def get_full_name(user):
@@ -169,7 +190,8 @@ def cmd_off(message):
 
     bot.reply_to(message,
         "Tablo o'chirildi!\n\n"
-        "Yakuniy natijalar:\n" + rating
+        "Yakuniy natijalar:\n\n" + rating,
+        parse_mode="HTML"
     )
 
 # ========== /ball ==========
@@ -245,15 +267,24 @@ def cmd_reyting(message):
 
     rating = get_rating_text(chat_data)
     status = "🟢 Tablo: YOQILGAN" if chat_data["active"] else "🔴 Tablo: O'CHIRILGAN"
-    host = ("Boshlovchi: " + chat_data["host_name"]) if chat_data["host_name"] else ""
+    
+    host_id = chat_data.get("host_id")
+    host_name = chat_data.get("host_name")
+    
+    if host_id and host_name:
+        host_link = '<a href="tg://user?id=' + str(host_id) + '">' + host_name + '</a>'
+        host = "Boshlovchi: " + host_link
+    else:
+        host = ""
+        
     ball = "Ball miqdori: " + str(chat_data["ball_amount"])
 
     text = status + "\n"
     if host:
         text += host + "\n"
-    text += ball + "\n\nNatijalar:\n" + rating
+    text += ball + "\n\nNatijalar:\n\n" + rating
 
-    bot.reply_to(message, text)
+    bot.reply_to(message, text, parse_mode="HTML")
 
 # ========== /settings ==========
 @bot.message_handler(commands=["settings"])
@@ -289,7 +320,7 @@ def cmd_reset(message):
     save_data(data)
     bot.reply_to(message, "Reyting tozalandi!")
 
-# ========== + belgisi ==========
+# ========== + VA ✅ BELGISI UCHUN IKKITA XABAR ==========
 @bot.message_handler(func=lambda m: True, content_types=["text"])
 def handle_plus(message):
     if message.text.strip() not in ["+", "✅"]:
@@ -325,6 +356,7 @@ def handle_plus(message):
     amount = chat_data["ball_amount"]
     receiver_id = str(receiver.id)
     receiver_name = get_full_name(receiver)
+    sender_name = get_full_name(sender)
 
     if receiver_id not in chat_data["users"]:
         chat_data["users"][receiver_id] = {"name": receiver_name, "balls": 0}
@@ -332,17 +364,26 @@ def handle_plus(message):
     chat_data["users"][receiver_id]["balls"] += amount
     save_data(data)
 
-    rating = get_rating_text(chat_data)
+    rating_text = get_rating_text(chat_data)
+    
+    # Ismlarni ko'k linkka o'tkazish
+    sender_link = '<a href="tg://user?id=' + str(sender.id) + '">' + sender_name + '</a>'
+    receiver_link = '<a href="tg://user?id=' + receiver_id + '">' + receiver_name + '</a>'
+    
     host_name = chat_data["host_name"]
+    host_link = '<a href="tg://user?id=' + str(host_id) + '">' + host_name + '</a>'
 
-    bot.send_message(message.chat.id,
-        receiver_name + " ga " + str(amount) + " ball qo'shildi\n\n"
-        "Boshlovchi: " + host_name + "\n\n"
-        "Xozirgi natijalar:\n" + rating
-    )
+    # --- 1-XABAR ---
+    msg1 = f"{sender_link} {receiver_link} ga {amount} ball qo'shildi"
+    bot.reply_to(message.reply_to_message, msg1, parse_mode="HTML")
+
+    # --- 2-XABAR ---
+    msg2 = f"Boshlovchi: {host_link}\n\nXozirgi natijalar:\n\n{rating_text}"
+    bot.send_message(message.chat.id, msg2, parse_mode="HTML")
 
 # ========== Ishga tushirish ==========
 print("Bot ishga tushmoqda...")
 setup_commands()
 print("Bot ishga tushdi!")
 bot.infinity_polling()
+        
